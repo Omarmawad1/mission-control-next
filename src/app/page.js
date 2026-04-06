@@ -156,18 +156,31 @@ export default function Home() {
       setSession(data.session ?? null);
       setAuthLoading(false);
 
-      const t = localStorage.getItem('mc_tasks_v4');
       const d = localStorage.getItem('mc_docs_v4');
       const m = localStorage.getItem('mc_memory_v4');
       const r = localStorage.getItem('mc_routes_v4');
       const f = localStorage.getItem('mc_feed_v4');
 
-      if (t) {
-        const parsed = JSON.parse(t);
-        setTasks(ensureReactivationTasks(parsed));
+      const { data: remoteTasks, error: tasksError } = await supabase
+        .from('Tasks')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (tasksError) {
+        console.error('Failed to load Supabase tasks:', tasksError.message);
+        const t = localStorage.getItem('mc_tasks_v4');
+        if (t) {
+          const parsed = JSON.parse(t);
+          setTasks(ensureReactivationTasks(parsed));
+        } else {
+          setTasks(prev => ensureReactivationTasks(prev));
+        }
+      } else if (remoteTasks?.length) {
+        setTasks(ensureReactivationTasks(remoteTasks));
       } else {
         setTasks(prev => ensureReactivationTasks(prev));
       }
+
       if (d) setDocs(JSON.parse(d));
       if (m) setMemory(JSON.parse(m));
       if (r) setModelRoutes(JSON.parse(r));
@@ -190,7 +203,9 @@ export default function Home() {
     };
   }, []);
 
-  useEffect(() => localStorage.setItem('mc_tasks_v4', JSON.stringify(tasks)), [tasks]);
+  useEffect(() => {
+    localStorage.setItem('mc_tasks_v4', JSON.stringify(tasks));
+  }, [tasks]);
   useEffect(() => localStorage.setItem('mc_docs_v4', JSON.stringify(docs)), [docs]);
   useEffect(() => localStorage.setItem('mc_memory_v4', JSON.stringify(memory)), [memory]);
   useEffect(() => localStorage.setItem('mc_routes_v4', JSON.stringify(modelRoutes)), [modelRoutes]);
@@ -235,19 +250,50 @@ export default function Home() {
 
   const pushFeed = (line) => setFeed(prev => [line, ...prev].slice(0, 120));
 
-  const createTask = () => {
+  const createTask = async () => {
     if (!newTask.title.trim()) return;
-    const t = { id: `t_${Date.now()}`, ...newTask };
+
+    const payload = {
+      title: newTask.title,
+      owner: newTask.owner,
+      status: newTask.status,
+      due: newTask.due || null,
+      priority: newTask.priority,
+      project: newTask.project,
+      notes: newTask.notes,
+    };
+
+    const { data, error } = await supabase
+      .from('Tasks')
+      .insert(payload)
+      .select()
+      .single();
+
+    const t = data || { id: `t_${Date.now()}`, ...payload };
+
+    if (error) {
+      console.error('Failed to create Supabase task:', error.message);
+    }
+
     setTasks(prev => [t, ...prev]);
     pushFeed(`TASK CREATED: ${t.title} (${t.owner})`);
     setShowCreate(false);
     setNewTask({ title: '', owner: 'OMAR', status: 'BACKLOG', due: '', priority: 'MEDIUM', project: 'AMAL BD ENGINE', notes: '' });
   };
 
-  const updateTaskStatus = (id, status) => {
+  const updateTaskStatus = async (id, status) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
     const task = tasks.find(t => t.id === id);
     if (task) pushFeed(`TASK MOVED: ${task.title} → ${status}`);
+
+    const { error } = await supabase
+      .from('Tasks')
+      .update({ status })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Failed to update Supabase task:', error.message);
+    }
   };
 
   const onDragStart = (e, id) => e.dataTransfer.setData('text/plain', id);
