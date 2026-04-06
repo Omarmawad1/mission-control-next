@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
 const TABS = ['OVERVIEW', 'TASKS', 'TEAM', 'PROJECTS', 'DOCS', 'BUSINESS DEVELOPMENT', 'CALENDAR', 'MEMORY', 'SETTINGS'];
 const STATUSES = ['BACKLOG', 'IN PROGRESS', 'REVIEW', 'DONE'];
@@ -111,6 +112,12 @@ export default function Home() {
   const [tab, setTab] = useState('OVERVIEW');
   const [bdSub, setBdSub] = useState('LEADS');
   const [calView, setCalView] = useState('TODAY');
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [email, setEmail] = useState('omar@amalandcompany.com');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
 
   const [tasks, setTasks] = useState(seedTasks);
   const [docs, setDocs] = useState(docsSeed);
@@ -133,11 +140,7 @@ export default function Home() {
   const [newTask, setNewTask] = useState({ title: '', owner: 'OMAR', status: 'BACKLOG', due: '', priority: 'MEDIUM', project: 'AMAL BD ENGINE', notes: '' });
 
   useEffect(() => {
-    const t = localStorage.getItem('mc_tasks_v4');
-    const d = localStorage.getItem('mc_docs_v4');
-    const m = localStorage.getItem('mc_memory_v4');
-    const r = localStorage.getItem('mc_routes_v4');
-    const f = localStorage.getItem('mc_feed_v4');
+    let mounted = true;
 
     const ensureReactivationTasks = (baseTasks) => {
       const existingTitles = new Set((baseTasks || []).map(x => x.title));
@@ -147,16 +150,44 @@ export default function Home() {
       return [...missing, ...(baseTasks || [])];
     };
 
-    if (t) {
-      const parsed = JSON.parse(t);
-      setTasks(ensureReactivationTasks(parsed));
-    } else {
-      setTasks(prev => ensureReactivationTasks(prev));
-    }
-    if (d) setDocs(JSON.parse(d));
-    if (m) setMemory(JSON.parse(m));
-    if (r) setModelRoutes(JSON.parse(r));
-    if (f) setFeed(JSON.parse(f));
+    const bootstrap = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!mounted) return;
+      setSession(data.session ?? null);
+      setAuthLoading(false);
+
+      const t = localStorage.getItem('mc_tasks_v4');
+      const d = localStorage.getItem('mc_docs_v4');
+      const m = localStorage.getItem('mc_memory_v4');
+      const r = localStorage.getItem('mc_routes_v4');
+      const f = localStorage.getItem('mc_feed_v4');
+
+      if (t) {
+        const parsed = JSON.parse(t);
+        setTasks(ensureReactivationTasks(parsed));
+      } else {
+        setTasks(prev => ensureReactivationTasks(prev));
+      }
+      if (d) setDocs(JSON.parse(d));
+      if (m) setMemory(JSON.parse(m));
+      if (r) setModelRoutes(JSON.parse(r));
+      if (f) setFeed(JSON.parse(f));
+    };
+
+    bootstrap();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!mounted) return;
+      setSession(nextSession ?? null);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => localStorage.setItem('mc_tasks_v4', JSON.stringify(tasks)), [tasks]);
@@ -263,6 +294,19 @@ export default function Home() {
 
   const updateRoute = (idx, field, value) => {
     setModelRoutes(prev => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+  };
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setAuthBusy(true);
+    setAuthError('');
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setAuthError(error.message);
+    setAuthBusy(false);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
   };
 
   const renderOverview = () => (
@@ -453,6 +497,32 @@ export default function Home() {
     </div>
   );
 
+  if (authLoading) {
+    return (
+      <main className='auth-shell'>
+        <div className='auth-card'>
+          <h1>MISSION CONTROL</h1>
+          <p className='muted'>Checking secure access…</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!session) {
+    return (
+      <main className='auth-shell'>
+        <form className='auth-card' onSubmit={handleLogin}>
+          <h1>MISSION CONTROL</h1>
+          <p className='muted'>Private access for Omar only.</p>
+          <input type='email' value={email} onChange={(e) => setEmail(e.target.value)} placeholder='Email' />
+          <input type='password' value={password} onChange={(e) => setPassword(e.target.value)} placeholder='Password' />
+          {authError ? <div className='auth-error'>{authError}</div> : null}
+          <button className='new-task' type='submit' disabled={authBusy}>{authBusy ? 'SIGNING IN…' : 'SIGN IN'}</button>
+        </form>
+      </main>
+    );
+  }
+
   return (
     <main className='shell'>
       <aside className='sidebar'>
@@ -461,7 +531,7 @@ export default function Home() {
         <nav>{TABS.map(t => <a key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</a>)}</nav>
       </aside>
       <section className='content'>
-        <header className='topbar'><div><h2>{tab}</h2><p className='muted'>AMAL & COMPANY WORKSPACE</p></div></header>
+        <header className='topbar'><div><h2>{tab}</h2><p className='muted'>AMAL & COMPANY WORKSPACE</p></div><button className='bd-tab' onClick={handleLogout}>SIGN OUT</button></header>
         {tab === 'OVERVIEW' && renderOverview()}
         {tab === 'TASKS' && renderTasks()}
         {tab === 'TEAM' && renderTeam()}

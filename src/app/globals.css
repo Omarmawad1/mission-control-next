@@ -1,6 +1,10 @@
 *{box-sizing:border-box}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','Helvetica Neue',Helvetica,Arial,sans-serif;background:#0d0f14;color:#e8ecf8}
 .shell{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+.auth-shell{min-height:100vh;display:grid;place-items:center;padding:24px}
+.auth-card{width:min(420px,92vw);display:grid;gap:12px;background:#121722;border:1px solid #23293b;border-radius:14px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.auth-card h1{margin:0;letter-spacing:.6px}
+.auth-error{background:#2a1418;border:1px solid #6d2c2c;color:#ffb4b4;border-radius:8px;padding:10px;font-size:13px}
 .sidebar{border-right:1px solid #1f2330;padding:20px 16px;background:#11141c}
 .sidebar h1{margin:0;font-size:18px;letter-spacing:.4px}
 .muted{color:#8890a4;font-size:13px}
